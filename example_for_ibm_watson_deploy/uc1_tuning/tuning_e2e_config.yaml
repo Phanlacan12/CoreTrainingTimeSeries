@@ -1,0 +1,70 @@
+backend:
+  type: sequential
+  gpu_devices: [0]
+
+data_module_config: &data_module
+  pipeline_type: ts_default
+
+  kind: csv
+  backend: pandas
+  file_path: "./tests/data/ETTh1.csv"
+  index_col: date
+  parse_dates: true
+  target_columns:
+    - OT
+
+  covariate:
+    past: []
+    future: []
+    static: []
+
+  normalize:
+    method: minmax
+  split_ratio:
+    train: 0.7
+    val: 0.2
+    test: 0.1
+  data_freq: "H"
+
+
+model:
+  single_model:
+    model_name: statistic_impl.prophet_statistic.ProphetStatistic
+    model_hyper_params:
+      alpha: 0.05
+
+evaluation:
+  test_size: 10
+  valid_size: 0
+  series_list: ["OT"]
+  strategy_args:
+    strategy_name: rolling_forecast
+    num_rollings: 2
+    stride: 1
+    horizon: 5
+    save_true_pred: false
+    seed: 42
+    deterministic: true
+    target_channel: OT
+    data_module_config: *data_module
+  metrics:
+    - mse
+    - rmse
+
+# Custom section for Tuning Configuration
+tuning:
+  n_trials: 5
+
+  metric: rmse
+  direction: minimize
+  parameters:
+    - name: changepoint_prior_scale
+      type: float
+      min: 0.001
+      max: 0.5
+      log: true
+    - name: seasonality_prior_scale
+      type: float
+      min: 0.01
+      max: 10.0
+      log: true

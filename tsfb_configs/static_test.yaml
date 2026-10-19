@@ -1,0 +1,79 @@
+# Config cho dataloader
+data_module_config: &base_loader
+  pipeline_type: static_grouped
+  loader: grouped_loader
+  file_path: "./tests/data/synthetic_store_sales.csv"
+  time_col: date
+  group_col: store_id
+  target_columns: # Xác định các cột mục tiêu
+    - sales
+    # - profit
+  covariate:
+    past:
+      - temp
+    future:
+      - promo
+    static:
+      - store_size
+  backend: pandas
+  normalize:
+    method: minmax
+    per_entity: True
+  split_ratio:
+    train: 0.7
+    val: 0.2
+    test: 0.1
+  return_type: pandas
+
+# Config cho backend: có thể lựa chọn ray để song song hóa quá trình eval (đặc biệt khi sử dụng rolling forecast, ta cần tạo ra hàng nghìn window)
+backend:
+  type: sequential # Lựa chọn giữa ray và sequential
+  gpu_devices: [0] # gpu
+
+model:
+  # Định nghĩa các kịch bản (approach) mà ta muốn test
+
+  single_model: # <-- Tên chúng ta tự đặt cho approach
+    approach: default # Chỉ sử dụng một mô hình duy nhất cho tất cả các series
+    model_name: "darts.models.NLinearModel" # Lựa chọn model
+    model_hyper_params:
+      input_chunk_length: 24
+      output_chunk_length: 24
+      n_epochs: 1
+      batch_size: 32
+      random_state: 42
+      pl_trainer_kwargs:
+        accelerator: cpu
+
+evaluation:
+  series_list: ["__default__"]
+  strategy_args:
+    strategy_name: rolling_forecast # Chọn chiến lược đánh giá là rolling forecast (tức là tạo ra nhiều window rolling); ngoài ra có thể chọn fixed_forecast
+    seed: 42
+    deterministic: full
+
+    # 2 tham số dưới đây là các tham số của chiến lược rolling forecast
+    stride: 1 # stride là khoảng cách giữa các window rolling, ở đây ta để là 1 để tạo ra các window rolling liên tiếp nhau
+    num_rollings: 1000 # Số lượng window rolling sẽ được tạo ra, ở đây ta để là 1000 để tạo ra nhiều window rolling cho việc đánh giá mô hình
+    horizon: 24
+    data_module_config: *base_loader
+    target_channel:
+      "__default__": null
+    save_true_pred: true
+    return_metrics_per_series: true
+
+    uncertainty:
+      method: conformal
+      alpha: 0.1
+      calibration_source: val
+      calibration_stride: 24
+      bonferroni_correction: true
+      finite_sample_correction: true
+
+  metrics: all
+
+# do phương thức rolling forecast sẽ tạo ra nhiều window rolling, nên eval của rolling forecast sẽ lâu hơn so với fixed forecast.
+
+#mlflow:
+#  enabled: true
+#  experiment_name: "ForecastingBenchmark_151025"

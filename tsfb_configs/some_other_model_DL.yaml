@@ -1,0 +1,128 @@
+# ================================
+# ✅ Base Dataloader Config
+# ================================
+data_module_config: &base_loader
+  loader: base
+  file_path: "./tests/data/ETTh1.csv"
+  index_col: date
+  target_columns:
+    - HUFL
+    - MUFL
+    - HULL
+    - LULL
+  covariate:
+    future:
+      - OT
+  backend: pandas
+  normalize:
+    method: minmax
+  split_ratio:
+    train: 0.7
+    val: 0.2
+    test: 0.1
+  return_type: pandas
+
+# ================================
+# ✅ Backend config
+# ================================
+backend:
+  type: sequential
+  gpu_devices: [0]
+
+# ================================
+# ✅ Model configs
+# ================================
+model:
+  # Transformer model (multivariate)
+  transformer_single:
+    approach: default
+    model_name: "darts.models.TransformerModel"
+    model_hyper_params:
+      input_chunk_length: 24
+      output_chunk_length: 24
+      d_model: 64
+      nhead: 4
+      num_encoder_layers: 2
+      num_decoder_layers: 2
+      dropout: 0.1
+      batch_size: 32
+      n_epochs: 1
+      random_state: 42
+      pl_trainer_kwargs:
+        accelerator: cpu
+
+  # RNN univariate per series
+  rnn_univariate:
+    approach: univariate_per_series
+    model_name: "darts.models.RNNModel"
+    model_hyper_params:
+      input_chunk_length: 24
+      output_chunk_length: 24
+      hidden_dim: 32
+      model: LSTM
+      n_rnn_layers: 2
+      dropout: 0.2
+      batch_size: 32
+      n_epochs: 1
+      random_state: 42
+      pl_trainer_kwargs:
+        accelerator: cpu
+
+  # Hybrid: LinearRegression + GRU
+  hybrid_lr_rnn:
+    approach: hybrid
+    group:
+      - series: [HUFL, HULL]
+        sub_approach: univariate_per_series
+        model_name: "darts.models.LinearRegressionModel"
+        model_hyper_params:
+          lags: 24
+          output_chunk_length: 24
+
+      - series: [MUFL, LULL]
+        sub_approach: multivariate
+        model_name: "darts.models.RNNModel"
+        model_hyper_params:
+          input_chunk_length: 24
+          output_chunk_length: 24
+          model: GRU
+          hidden_dim: 64
+          batch_size: 32
+          n_epochs: 1
+          random_state: 42
+          pl_trainer_kwargs:
+            accelerator: cpu
+
+  # TFT model (multivariate)
+  tft_multivariate:
+    approach: default
+    model_name: "darts.models.TFTModel"
+    model_hyper_params:
+      input_chunk_length: 24
+      output_chunk_length: 24
+      hidden_size: 64
+      lstm_layers: 1
+      dropout: 0.1
+      batch_size: 32
+      n_epochs: 1
+      random_state: 42
+      add_relative_index: true
+      add_encoders: {}
+      pl_trainer_kwargs:
+        accelerator: cpu
+
+# ================================
+# ✅ Evaluation strategy
+# ================================
+evaluation:
+  series_list: ["__default__"]
+  strategy_args:
+    strategy_name: fixed_forecast
+    seed: 42
+    deterministic: full
+    horizon: 24
+    data_module_config: *base_loader
+    save_true_pred: false
+    target_channel:
+      "__default__": null
+  metrics: all

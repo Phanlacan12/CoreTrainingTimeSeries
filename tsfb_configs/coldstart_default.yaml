@@ -1,0 +1,97 @@
+# Cold-start smoke test on the repository's standard wide pipeline.
+# A has 96 observed history points; B/C have 672. The final 24 rows are truth.
+data_module_config: &cold_data
+  pipeline_type: ts_default
+  kind: csv
+  backend: pandas
+  file_path: ./experiments/coldstart/data/etth1_coldstart_wide.csv
+  index_col: date
+  parse_dates: true
+  target_columns: [A, B, C]
+  covariate: {past: [], future: [OT], static: []}
+  # Keep raw values: A is intentionally absent (NaN) before it enters the panel,
+  # so fitting a conventional scaler on an early split would be ill-defined.
+  normalize: false
+  split_ratio: {train: 0.7, val: 0.15, test: 0.15}
+  data_freq: H
+
+backend:
+  type: sequential
+  gpu_devices: []
+
+model:
+  chronos_cross_off_cov_off:
+    approach: default
+    model_name: foundation.chronos
+    model_hyper_params: &chronos
+      pretrained_model_id: autogluon/chronos-2-small
+      inference_mode: zeroshot
+      device: cpu
+      torch_dtype: float32
+      context_length: 672
+      batch_size: 128
+      cross_learning: false
+      use_covariates: false
+
+  chronos_cross_off_cov_on:
+    approach: default
+    model_name: foundation.chronos
+    model_hyper_params:
+      <<: *chronos
+      cross_learning: false
+      use_covariates: true
+
+  chronos_cross_on_cov_off:
+    approach: default
+    model_name: foundation.chronos
+    model_hyper_params:
+      <<: *chronos
+      cross_learning: true
+      use_covariates: false
+
+  chronos_cross_on_cov_on:
+    approach: default
+    model_name: foundation.chronos
+    model_hyper_params:
+      <<: *chronos
+      cross_learning: true
+      use_covariates: true
+
+  # TiRex-2 benchmark modes: targets are independent; only covariate use changes.
+  tirex_cov_off:
+    approach: univariate_per_series
+    model_name: foundation.tirex
+    model_hyper_params: &tirex
+      pretrained_model_id: NX-AI/TiRex-2
+      inference_mode: zeroshot
+      device: cpu
+      use_covariates: false
+
+  tirex_cov_on:
+    approach: univariate_per_series
+    model_name: foundation.tirex
+    model_hyper_params:
+      <<: *tirex
+      use_covariates: true
+
+  seasonal_naive:
+    approach: univariate_per_series
+    model_name: darts.models.NaiveSeasonal
+    model_hyper_params:
+      K: 24
+
+evaluation:
+  series_list: ["__default__"]
+  strategy_args:
+    strategy_name: fixed_forecast
+    seed: 42
+    deterministic: full
+    horizon: 24
+    data_module_config: *cold_data
+    save_true_pred: false
+    target_channel: {"__default__": null}
+    return_metrics_per_series: true
+  metrics: [mae, mse, wape]
+
+mlflow:
+  enabled: false

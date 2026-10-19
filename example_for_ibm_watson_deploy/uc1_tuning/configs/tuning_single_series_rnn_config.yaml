@@ -1,0 +1,114 @@
+# Darts 0.36.0 reference:
+# - model_name must stay as darts.models.RNNModel
+# - This file is for the vanilla recurrent variant only (model: RNN).
+# - RNNModel internally fixes output_chunk_length=1, output_chunk_shift=0,
+#   and use_reversible_instance_norm=False even if passed by the user.
+#
+# Advanced kwargs supported by Darts but not tuned directly by the current
+# TuningConfig schema:
+# loss_fn:
+# likelihood:
+# torch_metrics:
+# optimizer_cls:
+# optimizer_kwargs:
+#   lr: 0.001
+# lr_scheduler_cls:
+# lr_scheduler_kwargs:
+# model_name:
+# work_dir:
+# log_tensorboard: false
+# nr_epochs_val_period: 1
+# force_reset: false
+# save_checkpoints: false
+# add_encoders:
+# pl_trainer_kwargs:
+#   accelerator: cpu
+# show_warnings: false
+mlflow:
+  enabled: true
+  experiment_name: tuning_vdbtn1
+
+data_module_config: &base_loader
+  pipeline_type: static_grouped
+  loader: grouped_loader
+  file_path: example_for_ibm_watson_deploy/uc5_tuning/data/optimize_training_vdbtn_66da6fbe_20260409_175034_202604100851.csv
+  time_col: timestamp
+  group_col: series_id
+  parse_dates: true
+  target_columns:
+    - target
+  covariate:
+    past: []
+    future:
+      - month_cov
+    static:
+      - TenDiaBan
+      - LoaiBenh
+      - HeCoQuanLienQuan
+      - TenBenh
+  backend: pandas
+  normalize:
+    method: minmax
+  split_mode: threshold
+  split_threshold:
+    train:
+      - '20251231'
+      - '20260307'
+    test:
+      - '20260307'
+      - '20260307'
+  data_freq: D
+  return_type: pandas
+
+model:
+  single_model:
+    model_name: darts.models.RNNModel
+    model_hyper_params:
+      model: RNN
+      input_chunk_length: 24
+      output_chunk_length: 1
+      training_length: 48
+      hidden_dim: 25
+      n_rnn_layers: 1
+      dropout: 0.0
+      batch_size: 32
+      n_epochs: 100
+      learning_rate: 0.001
+      random_state: 42
+      pl_trainer_kwargs:
+        accelerator: cpu
+        devices: 1
+
+tuning:
+  n_trials: 5
+  log_top_k_trial: 3
+  metric: rmse
+  direction: minimize
+  parameters:
+    - name: input_chunk_length
+      type: categorical
+      choices: [12, 24, 48, 96]
+    - name: training_length
+      type: categorical
+      choices: [128, 192, 256, 384]
+    - name: hidden_dim
+      type: categorical
+      choices: [16, 25, 32, 64, 128]
+    - name: n_rnn_layers
+      type: categorical
+      choices: [1, 2, 3, 4]
+    - name: dropout
+      type: float
+      min: 0.0
+      max: 0.5
+    - name: batch_size
+      type: categorical
+      choices: [16, 32, 64, 128]
+    - name: learning_rate
+      type: float
+      min: 1.0e-6
+      max: 1.0e-1
+      log: true
+    - name: random_state
+      type: categorical
+      choices: [42, 123, 2024]

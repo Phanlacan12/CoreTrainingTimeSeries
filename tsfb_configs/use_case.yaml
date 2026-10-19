@@ -1,0 +1,120 @@
+# Config for data module
+data_module_config: &data_module
+  # Select pipeline type for data module
+  pipeline_type: ts_default
+
+  # ---- DataReader config ----
+  kind: csv
+  backend: pandas
+  file_path: "./tests/data/ETTh1.csv"
+  index_col: date
+  parse_dates: true          # let DataReader parse index as datetime
+
+  # ---- target columns ----
+  target_columns:            # target columns
+    - HUFL
+    - MUFL
+    - HULL
+    - LULL
+
+  # ---- covariates: shared by DataReader + DefaultPreprocessData ----
+  covariate:
+    past: []                 # no past covariates for now
+    future:
+      - OT                   # future covariate
+    static: []               # add here if you have static features
+
+  # ---- preprocessing configuration ----
+  normalize:
+    method: minmax           # MinMaxScaler (see SCALER_MAP)
+  split_ratio:
+    train: 0.7
+    val: 0.2
+    test: 0.1
+  data_freq: "H"
+
+# Config cho backend: có thể lựa chọn ray để song song hóa quá trình eval (đặc biệt khi sử dụng rolling forecast, ta cần tạo ra hàng nghìn window)
+backend:
+  type: sequential # Lựa chọn giữa ray và sequential
+  gpu_devices: [0] # gpu
+
+model:
+  # Định nghĩa các kịch bản (approach) mà ta muốn test
+
+  single_model: # <-- Tên chúng ta tự đặt cho approach
+    approach: default # Chỉ sử dụng một mô hình duy nhất cho tất cả các series
+    model_name: "darts.models.NLinearModel" # Lựa chọn model
+    model_hyper_params:
+      input_chunk_length: 24
+      output_chunk_length: 24
+      n_epochs: 1
+      batch_size: 32
+      random_state: 42
+      pl_trainer_kwargs:
+        accelerator: cpu
+
+  test_hybrid: #<-- Tên chúng ta tự đặt cho approach
+    approach: hybrid # Thiết lập appoach hybrid, tức là ta sẽ sử dụng nhiều mô hình khác nhau cho các series khác nhau.
+    # Cụ thể: chia thành 2 nhóm: 2 series sẽ được chạy bằng 1 model multivariate; 2 series còn lại dường như không có tương quan với các series khác,
+    # nên ta sẽ chạy chúng bằng 2 mô hình univariate riêng biệt bằng cách loop model univariate.
+
+
+    group:
+      - series: [HUFL, MUFL] # phân nhóm các series
+        sub_approach: univariate_per_series # xác định chiến lược loop
+        model_name: "darts.models.NLinearModel"
+        model_hyper_params:
+          input_chunk_length: 24
+          output_chunk_length: 24
+          n_epochs: 1
+          batch_size: 32
+          random_state: 42
+          pl_trainer_kwargs:
+            accelerator: cpu
+
+      - series: [HULL, LULL] # phân nhóm các series
+        sub_approach: multivariate # xác định chiến lược dùng 1 model multivariate
+        model_name: "darts.models.NLinearModel"
+        model_hyper_params:
+          input_chunk_length: 24
+          output_chunk_length: 24
+          n_epochs: 1
+          batch_size: 32
+          random_state: 42
+          pl_trainer_kwargs:
+            accelerator: cpu
+
+
+evaluation:
+  series_list: ["__default__"]
+  strategy_args:
+    strategy_name: fixed_forecast # Chọn chiến lược đánh giá là rolling forecast (tức là tạo ra nhiều window rolling); ngoài ra có thể chọn fixed_forecast
+    seed: 42
+    deterministic: full
+
+    # 2 tham số dưới đây là các tham số của chiến lược rolling forecast
+    stride: 1 # stride là khoảng cách giữa các window rolling, ở đây ta để là 1 để tạo ra các window rolling liên tiếp nhau
+    num_rollings: 1000 # Số lượng window rolling sẽ được tạo ra, ở đây ta để là 1000 để tạo ra nhiều window rolling cho việc đánh giá mô hình
+    horizon: 24
+    data_module_config: *data_module
+    save_true_pred: true
+    target_channel:
+      "__default__": null
+    return_metrics_per_series: true
+
+    uncertainty:
+      method: conformal
+      alpha: 0.1
+      calibration_source: val
+      calibration_stride: 24
+      bonferroni_correction: true
+      finite_sample_correction: true
+
+  metrics: all
+
+# do phương thức rolling forecast sẽ tạo ra nhiều window rolling, nên eval của rolling forecast sẽ lâu hơn so với fixed forecast.
+
+
+# mlflow:
+#  enabled: true
+#  experiment_name: "ForecastingBenchmark_v1"

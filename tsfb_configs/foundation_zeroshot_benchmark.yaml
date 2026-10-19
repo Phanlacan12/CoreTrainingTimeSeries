@@ -1,0 +1,121 @@
+# ============================================================
+# Foundation Model Zero-shot Benchmark
+#
+# So sánh foundation models (zero-shot) với baseline trên ETTh1.
+# Dữ liệu: ETTh1.csv — chuỗi thời gian điện lực, tần suất giờ.
+#
+# Models được benchmark:
+#   1. chronos_small    — Chronos-2 Small (zero-shot, probabilistic)
+#   2. chronos_finetuned — Chronos-2 Small (fine-tuned LoRA 5 epochs)
+#   3. naive_seasonal   — Seasonal Naive baseline (K=24)
+#   4. nlinear          — NLinear (simple learnable baseline)
+#
+# Cài đặt dependencies trước khi chạy:
+#   pip install "chronos-forecasting>=2.1.0"
+# ============================================================
+
+data_module_config: &data_module
+  pipeline_type: ts_default
+  kind: csv
+  backend: pandas
+  file_path: "./tests/data/ETTh1.csv"
+  index_col: date
+  parse_dates: true
+
+  target_columns:
+    - HUFL          # High UseFul Load — univariate target cho foundation models
+
+  covariate:
+    past: []
+    future: []
+    static: []
+
+  normalize:
+    method: minmax
+  split_ratio:
+    train: 0.7
+    val: 0.15
+    test: 0.15
+  data_freq: "H"
+
+backend:
+  type: sequential
+  gpu_devices: [0]
+
+model:
+
+  # 1. Chronos-2 Small — Zero-shot
+  chronos_zeroshot:
+    approach: default
+    model_name: "foundation.chronos"
+    model_hyper_params:
+      pretrained_model_id: "autogluon/chronos-2-small"
+      inference_mode: "zeroshot"
+      device: "cuda"
+      num_samples: 20
+      torch_dtype: "bfloat16"
+
+  # 2. Chronos-2 Small — Fine-tuned LoRA
+  chronos_finetuned:
+    approach: default
+    model_name: "foundation.chronos"
+    model_hyper_params:
+      pretrained_model_id: "autogluon/chronos-2-small"
+      inference_mode: "finetuned"
+      device: "cuda"
+      num_samples: 20
+      torch_dtype: "bfloat16"
+      finetune_config:
+        mode: "lora"
+        epochs: 5
+        learning_rate: 0.00001
+        lora_rank: 8
+        batch_size: 4
+        checkpoint_dir: "./artifacts/chronos_finetuned_etth1"
+        extra_kwargs:
+          gradient_accumulation_steps: 8
+
+  # 3. Seasonal Naive Baseline
+  naive_seasonal:
+    approach: default
+    model_name: "darts.models.NaiveSeasonal"
+    model_hyper_params:
+      K: 24
+
+  # 4. NLinear — Learnable Baseline
+  nlinear_baseline:
+    approach: default
+    model_name: "darts.models.NLinearModel"
+    model_hyper_params:
+      input_chunk_length: 96
+      output_chunk_length: 24
+      n_epochs: 5
+      batch_size: 64
+      random_state: 42
+      pl_trainer_kwargs:
+        accelerator: gpu
+        devices: 1
+        enable_progress_bar: false
+
+evaluation:
+  series_list: ["__default__"]
+  strategy_args:
+    strategy_name: rolling_forecast
+    seed: 42
+    deterministic: full
+    horizon: 24
+    num_rollings: 1000
+    stride: 1
+    data_module_config: *data_module
+    save_true_pred: true
+    target_channel:
+      "__default__": null
+    return_metrics_per_series: true
+    quantile_levels: [0.1, 0.5, 0.9]
+    probabilistic_num_samples: 100
+
+  metrics: all
+
+mlflow:
+  enabled: false
+  experiment_name: "FoundationModel_Benchmark_ETTh1"

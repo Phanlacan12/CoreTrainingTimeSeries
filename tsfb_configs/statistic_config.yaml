@@ -1,0 +1,114 @@
+# ==========================================
+# ✅ Base Dataloader
+# ==========================================
+data_module_config: &base_loader
+  loader: base
+  file_path: "./tests/data/ETTh1.csv"
+  index_col: date
+  target_columns:
+    - HUFL
+    - MUFL
+    - HULL
+    - LULL
+  covariate: {}
+  backend: pandas
+  normalize: null
+  split_ratio:
+    train: 0.7
+    val: 0.2
+    test: 0.1
+  return_type: pandas
+
+# ==========================================
+# ✅ Backend
+# ==========================================
+backend:
+  type: sequential
+
+# ==========================================
+# ✅ Models
+# ==========================================
+model:
+  naive_mean:
+    approach: univariate_per_series
+    model_name: darts.models.NaiveMean
+
+  naive_drift:
+    approach: univariate_per_series
+    model_name: darts.models.NaiveDrift
+
+  naive_seasonal:
+    approach: univariate_per_series
+    model_name: darts.models.NaiveSeasonal
+
+  naive_moving_average:
+    approach: univariate_per_series
+    model_name: darts.models.NaiveMovingAverage
+
+  exponential_smoothing:
+    approach: univariate_per_series
+    model_name: darts.models.ExponentialSmoothing
+
+  arima:
+    approach: univariate_per_series
+    model_name: darts.models.ARIMA
+    model_hyper_params:
+      p: 2
+      d: 1
+      q: 2
+
+  auto_arima:
+    approach: univariate_per_series
+    model_name: darts.models.AutoARIMA
+    model_hyper_params:
+      seasonal: false
+
+  kalman_forecaster:
+    approach: univariate_per_series
+    model_name: darts.models.KalmanForecaster
+
+  varima:
+    approach: default
+    model_name: darts.models.VARIMA
+
+#  auto_ces:
+#    approach: univariate_per_series
+#    model_name: darts.models.AutoCES
+
+  auto_theta:
+    approach: univariate_per_series
+    model_name: darts.models.AutoTheta
+
+  auto_ets:
+    approach: univariate_per_series
+    model_name: darts.models.AutoETS
+
+  auto_tbats:
+    approach: univariate_per_series
+    model_name: darts.models.AutoTBATS
+    model_hyper_params:
+      season_length: 7
+
+  fft:
+    approach: univariate_per_series
+    model_name: darts.models.FFT
+
+  croston:
+    approach: univariate_per_series
+    model_name: darts.models.Croston
+
+# ==========================================
+# ✅ Evaluation Strategy
+# ==========================================
+evaluation:
+  series_list: ["__default__"]
+  strategy_args:
+    strategy_name: fixed_forecast
+    seed: 42
+    deterministic: full
+    horizon: 24
+    data_module_config: *base_loader
+    save_true_pred: false
+    target_channel:
+      "__default__": null
+  metrics: all

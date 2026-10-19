@@ -1,0 +1,70 @@
+data_module_config: &data_module
+  pipeline_type: astgcrn
+
+  kind: csv
+  backend: pandas
+  file_path: "./tests/data/tgcrn_spatio.csv"
+  parse_dates:
+    - timestamp
+
+  target_columns:
+    - y
+
+  covariate:
+    past: []
+    future: []
+    static: []
+
+  index_column: timestamp
+  node_column: station
+  od_path: "./tests/data/tgcrn_spatio_adj.csv"
+  od_kind: csv
+
+  split_ratio:
+    train: 0.7
+    val: 0.2
+    test: 0.1
+
+backend:
+  type: sequential
+  gpu_devices: []
+
+model:
+  tgcrn:
+    approach: default
+    model_name: "tgcrn.TGCRN"
+    model_hyper_params:
+      input_chunk_length: 4
+      output_chunk_length: 2
+      n_epochs: 1
+      batch_size: 4
+      learning_rate: 0.01
+      random_state: 42
+      freq: "H"
+      device: cpu
+      points_per_hour: 1
+      rnn_units: 8
+      embed_dim: 4
+      cheb_k: 2
+      num_layers: 1
+      graph_direction: symm
+      time_embedding: false
+      time_station: false
+      od_flag: false
+
+evaluation:
+  series_list: ["__default__"]
+  strategy_args:
+    strategy_name: fixed_forecast
+    seed: 42
+    deterministic: full
+    stride: 1
+    num_rollings: 1
+    horizon: 2
+    data_module_config: *data_module
+    save_true_pred: false
+    target_channel:
+      "__default__": null
+    return_metrics_per_series: false
+
+  metrics: all

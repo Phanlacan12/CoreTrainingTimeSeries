@@ -1,0 +1,117 @@
+featurestore_config_dir: ".fs_config"
+
+output:
+  kind: "parquet"
+  file_path: "offline_features.parquet"
+
+target_columns:
+  - "cases"
+
+covariate:
+  past:
+    - "mobility_index"
+    - "vaccination_rate"
+    - "nearby_cases"
+  future:
+    - "day_of_week"
+    - "hour_of_day"
+    - "is_holiday"
+    - "temperature"
+    - "humidity"
+  static:
+    - "disease_type"
+    - "danger_level"
+    - "population_density"
+
+backend: "pandas"
+
+entities:
+  - name: "series_id"
+    value_type: "STRING"
+    description: "Series ID (Location_Disease)"
+    join_key: "series_id"
+
+sources:
+  - id: "ts_source"
+    name: "ts_source"
+    type: "file"
+    uri: "../data/epidemic_cases_ts.csv" # Absolute path via run dir or relative to config based on cwd
+    timestamp_field: "timestamp"
+    created_timestamp_column: ""
+    description: "Time Series CSV source"
+
+  - id: "static_source"
+    name: "static_source"
+    type: "file"
+    uri: "../data/epidemic_static.csv"
+    timestamp_field: "timestamp"
+    created_timestamp_column: ""
+    description: "Static CSV source"
+
+feature_views:
+  - name: "cases_view"
+    entities:
+      - "series_id"
+    ttl: 0
+    source: "ts_source"
+    schema:
+      - name: "cases"
+        dtype: "INT64"
+      - name: "day_of_week"
+        dtype: "INT64"
+      - name: "hour_of_day"
+        dtype: "INT64"
+      - name: "is_holiday"
+        dtype: "INT64"
+      - name: "temperature"
+        dtype: "FLOAT"
+      - name: "humidity"
+        dtype: "FLOAT"
+      - name: "mobility_index"
+        dtype: "FLOAT"
+      - name: "vaccination_rate"
+        dtype: "FLOAT"
+      - name: "nearby_cases"
+        dtype: "INT64"
+    tags:
+      tags: "target_and_covariates"
+
+  - name: "static_view"
+    entities:
+      - "series_id"
+    ttl: 0
+    source: "static_source"
+    schema:
+      - name: "disease_type"
+        dtype: "STRING"
+      - name: "danger_level"
+        dtype: "STRING"
+      - name: "population_density"
+        dtype: "FLOAT"
+    tags:
+      kind: "static"
+
+feature_store:
+  project: "epidemic_feature_store"
+  registry: "registry.db"
+  provider: "local"
+  online_store:
+    type: "sqlite"
+    path: "online_store.db"
+  offline_store:
+    type: "file"
+  runtime:
+    rename_event_timestamp_to: B_timestamp
+
+feature_services:
+  - name: "training_service"
+    features:
+      - "cases_view"
+      - "static_view"
+    description: "Service for Epidemic training data"
+    tags:
+      purpose: "training"
+    transformers:
+      - type: label_encoding
+        params:
+          input_cols: ["disease_type", "danger_level"]

@@ -1,0 +1,114 @@
+# env_vars:
+#   ACCESS_KEY: <YOUR_ACCESS_KEY>
+#   SECRET_KEY: <YOUR_SECRET_KEY>
+#   S3_ENDPOINT: <YOUR_S3_ENDPOINT>
+#   SINGLESTORE_ENDPOINT: <YOUR_SINGLESTORE_ENDPOINT>
+#   SINGLESTORE_HOST: <YOUR_SINGLESTORE_HOST>
+#   SINGLESTORE_PORT: <YOUR_SINGLESTORE_PORT>
+#   SINGLESTORE_USER: <YOUR_SINGLESTORE_USER>
+#   SINGLESTORE_PASS: <YOUR_SINGLESTORE_PASS>
+#   HIVE_PATH: <YOUR_HIVE_PATH>
+#   HIVE_PASS: <YOUR_HIVE_PASS>
+#   HIVE_CLIENT_USER: <YOUR_HIVE_CLIENT_USER>
+#   HIVE_CLIENT_PASS: <YOUR_HIVE_CLIENT_PASS>
+#   HIVEMETASTORE_HOST: <YOUR_HIVEMETASTORE_HOST>
+#   AWS_ACCESS_KEY_ID: <YOUR_AWS_ACCESS_KEY_ID>
+#   AWS_SECRET_ACCESS_KEY: <YOUR_AWS_SECRET_ACCESS_KEY>
+#   AWS_ENDPOINT_URL: <YOUR_AWS_ENDPOINT_URL>
+#   AWS_CA_BUNDLE: null
+#   PRESTO_USERNAME: <YOUR_PRESTO_USERNAME>
+#   PRESTO_PASSWORD: <YOUR_PRESTO_PASSWORD>
+#   PRESTO_HOST: <YOUR_PRESTO_HOST>
+#   PRESTO_PORT: <YOUR_PRESTO_PORT>
+#   PRESTO_TRUSTSTORE_PATH: <YOUR_PRESTO_TRUSTSTORE_PATH>
+#   PRESTO_TRUSTSTORE_PASSWORD: <YOUR_PRESTO_TRUSTSTORE_PASSWORD>
+mlflow:
+  enabled: true
+  experiment_name: tuning_vdbtn1
+  # tracking_uri: http://192.168.0.121:31700
+  # tags:
+  #   data_matrix_id: f31e3b91-6252-4799-8188-2f7c987e91d5
+  #   pmnb_pipeline_id: 5f07cfb0-f490-4e03-a4ee-9f0aa9fbc9a6
+  #   ibm_reduce_size: 1/1
+  #   ibm_pipeline_id: 4929501d-08ee-4d19-84cc-62d9fdd02fc3
+  #   ibm_pipeline_job_id: 07e2207e-66d2-41e3-b070-074a781f0063
+  #   ibm_pipeline_run_id: 77796046-a7ca-4cc8-afe3-9d705b349dcc
+
+data_module_config: &base_loader
+  pipeline_type: static_grouped
+  loader: grouped_loader
+  file_path: example_for_ibm_watson_deploy/uc5_tuning/data/optimize_training_vdbtn_66da6fbe_20260409_175034_202604100851.csv
+  time_col: timestamp
+  group_col: series_id
+  parse_dates: true
+  target_columns:
+  - target
+  covariate:
+    past: []
+    future:
+    - month_cov
+    static:
+    - TenDiaBan
+    - LoaiBenh
+    - HeCoQuanLienQuan
+    - TenBenh
+  backend: pandas
+  normalize:
+    method: minmax
+  split_mode: threshold
+  split_threshold:
+    train:
+    - '20251231'
+    - '20260307'
+    test:
+    - '20260307'
+    - '20260307'
+  data_freq: D
+  return_type: pandas
+
+
+model:
+  single_model:
+    model_name: darts.models.ARIMA
+    model_hyper_params:
+      trend: c
+      seasonal_periods: 12
+      measurement_error: true
+
+tuning:
+  n_trials: 2
+  log_top_k_trial: 2
+  metric: mae
+  metrics_eval: [mape, mae, mse, rmse]
+  direction: minimize
+  parameters:
+    - name: p
+      type: int
+      min: 0
+      max: 2
+    - name: d
+      type: int
+      min: 0
+      max: 2
+    - name: q
+      type: int
+      min: 0
+      max: 2
+    - name: P_seasonal
+      type: int
+      min: 0
+      max: 2
+    - name: D_seasonal
+      type: int
+      min: 0
+      max: 2
+    - name: Q_seasonal
+      type: int
+      min: 0
+      max: 2
+    - name: seasonal_periods
+      type: categorical
+      choices: [7, 12, 14, 24]
+    - name: measurement_error
+      type: categorical
+      choices: [true, false]

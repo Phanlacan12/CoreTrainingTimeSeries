@@ -1,0 +1,66 @@
+data_module_config: &base_loader
+  pipeline_type: static_grouped
+  loader: grouped_loader
+  file_path: data/Cluster_2_data.csv
+  time_col: B_timestamp
+  group_col: series_id
+  target_columns:
+    - cases
+  covariate:
+    past:
+      - mobility_index
+      - vaccination_rate
+      - nearby_cases
+    future:
+      - day_of_week
+      - hour_of_day
+      - is_holiday
+      - temperature
+      - humidity
+    static:
+      - disease_type
+      - danger_level
+      - population_density
+  backend: pandas
+  normalize:
+    method: minmax
+  split_ratio:
+    train: 0.7
+    val: 0.2
+    test: 0.1
+  return_type: pandas
+
+backend:
+  type: sequential
+  gpu_devices: [0]
+
+mlflow:
+  enabled: true
+  experiment_name: E2E_Cluster_Example1
+
+model:
+  cluster2_model:
+    approach: default
+    model_name: "darts.models.NLinearModel"
+    model_hyper_params:
+      input_chunk_length: 24
+      output_chunk_length: 12
+      n_epochs: 20
+      batch_size: 32
+      random_state: 42
+      pl_trainer_kwargs:
+        accelerator: cpu
+
+evaluation:
+  series_list: ["__default__"]
+  strategy_args:
+    strategy_name: fixed_forecast
+    seed: 42
+    deterministic: full
+    horizon: 12
+    data_module_config: *base_loader
+    save_true_pred: false
+    target_channel:
+      "__default__": null
+    return_metrics_per_series: true
+  metrics: ["mae", "rmse", "smape"]

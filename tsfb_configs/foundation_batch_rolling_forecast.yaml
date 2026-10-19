@@ -1,0 +1,177 @@
+# ============================================================
+# Foundation Model — Batch Rolling Forecast
+#
+# Minh họa đường chạy batch rolling forecast tự động kích hoạt
+# khi model có supports_batch_forecast = True.
+#
+# Cơ chế hoạt động:
+#   - Chronos / TimesFM có supports_batch_forecast = True
+#   - rolling_forecast._execute() tự động gọi _eval_batch()
+#     thay vì _eval_sample() theo từng cửa sổ
+#   - _eval_batch() tập hợp tất cả rolling windows, truyền vào
+#     FoundationModelBase.batch_forecast() xử lý song song GPU
+#   - Kết quả giống hệt sample path nhưng nhanh hơn N lần
+#     (N = số rolling windows / batch_size)
+#   - Darts models dùng _eval_sample (sequential) — giữ đây làm baseline
+#
+# Dataset  : ETTh1 (Electricity Transformer Temperature, giờ)
+# Target   : OT (Oil Temperature) — univariate
+# Horizon  : 96 steps
+# Context  : 512 steps
+#
+# Models:
+#   ── Batch path (GPU parallel) ──────────────────────────────
+#   1. chronos_batch      — Chronos-2-Small,  batch_size=32
+#   2. chronos_batch_lowmem — Chronos-2-Small, batch_size=8 (low VRAM)
+#   ── Sample path (sequential, _eval_sample) ─────────────────
+#   3. moment_sample      — MOMENT-1-large  (supports_batch=False)
+#   4. nlinear_darts      — NLinearModel    (Darts, statistical/DL baseline)
+#   5. nhits_darts        — NHiTSModel      (Darts, DL baseline)
+#   6. naive_seasonal     — NaiveSeasonal   (Darts, seasonal naive K=24)
+#
+# Cài đặt:
+#   pip install "chronos-forecasting>=2.1.0"
+# ============================================================
+
+data_module_config: &data_module
+  pipeline_type: ts_default
+  kind: csv
+  backend: pandas
+  file_path: "./tests/data/ETTh1.csv"
+  index_col: date
+  parse_dates: true
+
+  target_columns:
+    - HUFL
+    - MUFL
+    - HULL
+    - LULL
+
+  covariate:
+    past: []
+    future: []
+    static: []
+
+  normalize:
+    method: standard
+  split_ratio:
+    train: 0.6
+    val: 0.2
+    test: 0.2
+  data_freq: "H"
+
+backend:
+  type: sequential
+  gpu_devices: [0]
+
+model:
+
+  # ── Chronos-2 Small — Batch path (supports_batch_forecast = True) ──
+  # batch_size=32: mỗi lần GPU inference xử lý 32 rolling windows song song.
+  # Với 500 rolling windows → 16 GPU calls thay vì 500 sequential calls.
+  # approach: univariate — Chronos là univariate model, UnivariateToMultivariate
+  # tự động gọi riêng từng cột.
+  chronos_batch:
+    approach: univariate_per_series
+    model_name: "foundation.chronos"
+    model_hyper_params:
+      pretrained_model_id: "autogluon/chronos-2-small"
+      inference_mode: "zeroshot"
+      device: "cuda"
+      torch_dtype: "bfloat16"
+      context_length: 512
+      batch_size: 32          # số windows xử lý song song trên GPU
+
+  # ── Chronos-2 Small — Batch path, batch_size nhỏ hơn (low VRAM) ──
+  chronos_batch_lowmem:
+    approach: univariate_per_series
+    model_name: "foundation.chronos"
+    model_hyper_params:
+      pretrained_model_id: "autogluon/chronos-2-small"
+      inference_mode: "zeroshot"
+      device: "cuda"
+      torch_dtype: "bfloat16"
+      context_length: 512
+      batch_size: 8           # giảm nếu OOM trên GPU nhỏ
+
+  # ── MOMENT-1-small — Sample path (supports_batch_forecast = False) ──
+  # Dùng để so sánh tốc độ: chạy _eval_sample, 1 window / inference.
+  moment_sample:
+    approach: default
+    model_name: "foundation.moment"
+    model_hyper_params:
+      pretrained_model_id: "AutonLab/MOMENT-1-small"
+      inference_mode: "zeroshot"
+      device: "cuda"
+      torch_dtype: "float32"
+      context_length: 512
+
+  # ── Darts baselines — Mixed path ──────────────────────────────────────
+  # DartsModelAdapter.supports_batch_forecast là property:
+  #   - True  khi có cả input_chunk_length + output_chunk_length (DL models)
+  #     → dispatch vào _eval_batch() (đọc tất cả windows 1 lần, inference sequential)
+  #   - False khi thiếu 1 trong 2 (statistical models: NaiveSeasonal, AutoARIMA...)
+  #     → _eval_sample() như bình thường
+  # NLinear / NHiTS bên dưới → True → _eval_batch path
+  # NaiveSeasonal             → False → _eval_sample path
+
+  # NLinear — lightweight learnable baseline, train nhanh
+  nlinear_darts:
+    approach: default
+    model_name: "darts.models.NLinearModel"
+    model_hyper_params:
+      input_chunk_length: 512   # khớp context_length với foundation models
+      output_chunk_length: 96   # khớp horizon
+      n_epochs: 10
+      batch_size: 64
+      random_state: 42
+      pl_trainer_kwargs:
+        accelerator: gpu
+        devices: 1
+        enable_progress_bar: false
+
+  # NHiTS — multi-scale DL baseline
+  nhits_darts:
+    approach: default
+    model_name: "darts.models.NHiTSModel"
+    model_hyper_params:
+      input_chunk_length: 512
+      output_chunk_length: 96
+      num_stacks: 3
+      num_blocks: 1
+      num_layers: 2
+      n_epochs: 10
+      batch_size: 64
+      random_state: 42
+      pl_trainer_kwargs:
+        accelerator: gpu
+        devices: 1
+        enable_progress_bar: false
+
+  # Seasonal Naive — statistical lower bound
+  naive_seasonal:
+    approach: default
+    model_name: "darts.models.NaiveSeasonal"
+    model_hyper_params:
+      K: 24   # seasonality = 24h
+
+evaluation:
+  series_list: ["__default__"]
+  strategy_args:
+    strategy_name: rolling_forecast
+    seed: 42
+    deterministic: full
+    horizon: 96
+    num_rollings: 500         # 500 windows: batch path tiết kiệm ~15x GPU calls
+    stride: 1
+    data_module_config: *data_module
+    save_true_pred: true
+    evaluate_on_normalized: true   # báo cáo metrics trên normalized scale (so sánh được với literature)
+    target_channel:
+      "__default__": null
+    return_metrics_per_series: true
+
+  metrics: all
+mlflow:
+  enabled: false
+  experiment_name: "Foundation_BatchRolling_ETTh1"

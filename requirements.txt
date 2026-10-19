@@ -1,0 +1,47 @@
+pandas==2.2.3
+numpy>=1.22,<2.0
+matplotlib==3.10.1
+statsmodels==0.14.4
+scikit-learn==1.6.1
+pmdarima==2.0.4
+pyyaml==6.0.2
+loguru==0.7.3
+pydantic==2.11.3
+torch==2.7.0
+pyspark==3.5.5
+ray==2.48.0
+darts==0.36.0
+prophet>=1.2.0
+catboost==1.2.8
+lightgbm==4.6.0
+einops>=0.8.0
+mlflow==3.7.0
+sqlalchemy>=2.0.0
+polars==1.33.1
+pymysql==1.1.2
+duckdb==1.4.0
+cmdstanpy>=1.0.4
+structlog==23.2.0
+colorama==0.4.6
+boto3==1.41.2
+onnx==1.20.0
+onnxruntime==1.23.2
+optuna>=3.0.0
+protobuf<5.0.0
+opentelemetry-api<1.28.0
+opentelemetry-sdk<1.28.0
+opentelemetry-proto<1.28.0
+pytest-mock==3.14.0
+chronos-forecasting>=2.1.0    # Chronos-2 (Amazon)
+timesfm>=2.0.0                 # TimesFM (Google) — 2.x API (TimesFM_2p5_200M_torch)
+peft>=0.14.0                  # LoRA fine-tuning
+momentfm>=0.1,<1.0            # MOMENT (CMU) — needs --no-deps
+uni2ts>=1.0.0                 # Moirai (Salesforce) — needs --no-deps
+# TiRex-2 stack: upstream pins conflict with torch/numpy/huggingface-hub above.
+# Listed for documentation; setup.py excludes these packages from install_requires.
+# Install explicitly when needed:
+#   python -m pip install --no-deps tirex-2==0.1.1 xlstm==2.0.5 flashrnn==1.0.6 mlstm-kernels==2.0.4
+tirex-2==0.1.1
+xlstm==2.0.5
+flashrnn==1.0.6
+mlstm-kernels==2.0.4

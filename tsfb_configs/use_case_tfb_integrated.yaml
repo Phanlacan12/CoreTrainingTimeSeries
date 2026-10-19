@@ -1,0 +1,170 @@
+data_module_config: &data_module
+  pipeline_type: ts_default
+
+  kind: csv
+  backend: pandas
+  file_path: "./tests/data/ETTh1.csv"
+  index_col: date
+  parse_dates: true
+
+  target_columns:
+    - OT
+
+  covariate:
+    past: []
+    future: []
+    static: []
+
+  normalize:
+    method: minmax
+
+  split_mode: threshold
+  split_threshold:
+    train: ["2016-07-01 00:00:00", "2016-07-01 23:00:00"]
+    val: ["2016-07-02 00:00:00", "2016-07-02 07:00:00"]
+    test: ["2016-07-02 08:00:00", "2016-07-02 15:00:00"]
+
+  data_freq: "H"
+
+backend:
+  type: sequential
+  gpu_devices: [0]
+
+common_model_hyper_params: &common_model_hyper_params
+  input_chunk_length: 8
+  output_chunk_length: 2
+  n_epochs: 1
+  batch_size: 8
+  learning_rate: 0.01
+  random_state: 42
+  freq: "H"
+  device: cuda:0
+  num_workers: 0
+
+model:
+  tfb_dlinear:
+    approach: default
+    model_name: "tfb.DLinear"
+    model_hyper_params:
+      <<: *common_model_hyper_params
+
+  tfb_xpatch:
+    approach: default
+    model_name: "tfb.xPatch"
+    model_hyper_params:
+      <<: *common_model_hyper_params
+      patch_len: 4
+      stride: 2
+
+  tfb_transformer:
+    approach: default
+    model_name: "tfb.Transformer"
+    model_hyper_params:
+      <<: *common_model_hyper_params
+      d_model: 16
+      d_ff: 32
+      n_heads: 2
+      e_layers: 1
+      d_layers: 1
+
+  tfb_tide:
+    approach: default
+    model_name: "tfb.TiDE"
+    model_hyper_params:
+      <<: *common_model_hyper_params
+      d_model: 16
+      d_ff: 32
+      e_layers: 1
+      d_layers: 1
+
+  tfb_timekan:
+    approach: default
+    model_name: "tfb.TimeKAN"
+    model_hyper_params:
+      <<: *common_model_hyper_params
+      d_model: 16
+      d_ff: 32
+      e_layers: 1
+
+  tfb_timemixer:
+    approach: default
+    model_name: "tfb.TimeMixer"
+    model_hyper_params:
+      <<: *common_model_hyper_params
+      d_model: 16
+      d_ff: 32
+      e_layers: 1
+
+  tfb_pdf:
+    approach: default
+    model_name: "tfb.PDF"
+    model_hyper_params:
+      <<: *common_model_hyper_params
+      patch_len: 4
+      stride: 2
+      period: 4
+      d_model: 16
+      d_ff: 32
+      e_layers: 1
+      n_heads: 2
+
+  tfb_fits:
+    approach: default
+    model_name: "tfb.FITS"
+    model_hyper_params:
+      <<: *common_model_hyper_params
+      cut_freq: 2
+
+  tfb_duet:
+    approach: default
+    model_name: "tfb.DUET"
+    model_hyper_params:
+      <<: *common_model_hyper_params
+      d_model: 16
+      d_ff: 32
+      e_layers: 1
+      n_heads: 2
+
+  tfb_patchmlp:
+    approach: default
+    model_name: "tfb.PatchMLP"
+    model_hyper_params:
+      <<: *common_model_hyper_params
+      d_model: 16
+      d_ff: 32
+
+  tfb_hdmixer:
+    approach: default
+    model_name: "tfb.HDMixer"
+    model_hyper_params:
+      <<: *common_model_hyper_params
+      patch_len: 4
+      stride: 2
+      d_model: 16
+      d_ff: 32
+      n_heads: 2
+      e_layers: 1
+
+  tfb_amplifier:
+    approach: default
+    model_name: "tfb.Amplifier"
+    model_hyper_params:
+      <<: *common_model_hyper_params
+      hidden_size: 16
+
+evaluation:
+  series_list: ["__default__"]
+  strategy_args:
+    strategy_name: fixed_forecast
+    seed: 42
+    deterministic: full
+    stride: 1
+    num_rollings: 1
+    horizon: 2
+    data_module_config: *data_module
+    save_true_pred: true
+    target_channel:
+      "__default__": null
+    return_metrics_per_series: true
+
+  metrics: all

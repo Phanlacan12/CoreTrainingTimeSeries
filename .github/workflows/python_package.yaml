@@ -1,0 +1,151 @@
+name: IC time series forecasting
+
+on:
+  push:
+    branches:
+      - main
+      - stable_benchmark
+  pull_request:
+    branches:
+      - main
+      - stable_benchmark
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.11]
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 2
+
+      - name: Free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          docker system prune -af || true
+          docker volume prune -f || true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Check line count
+        shell: bash
+        run: |
+          echo "Checking lines of code in each file"
+          MAX_LINES=1000
+          IGNORE_DIR="tsfb/base/origin_code"
+
+          while IFS= read -r file; do
+            base="$(basename "$file")"
+            [[ "$base" =~ ^[Rr][Ee][Aa][Dd][Mm][Ee] ]] && continue
+
+            if [[ "$file" != *".pylintrc"* ]] \
+               && [[ "$file" != *"airflow.cfg"* ]] \
+               && [[ "$file" != *.png ]]; then
+              line_count=$(wc -l < "$file")
+              if [ "$line_count" -gt "$MAX_LINES" ]; then
+                echo "::error file=$file::File $file has $line_count lines, which exceeds the threshold of $MAX_LINES lines."
+                exit 1
+              fi
+            fi
+          done < <(git ls-files | grep -v '^tests/' | grep -v "^$IGNORE_DIR" | grep -v '^examples/' | grep -v '\.ipynb$')
+
+      - name: Check lines of code changes
+        shell: bash
+        run: |
+          MAX_CHANGE_LINES=1500
+          BASE_BRANCH=main
+
+          if [[ "${GITHUB_REF##*/}" == "stable_benchmark" ]]; then
+            BASE_BRANCH=stable_benchmark
+          elif [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            PR_BASE=$(jq -r .pull_request.base.ref "$GITHUB_EVENT_PATH")
+            if [[ "$PR_BASE" == "stable_benchmark" ]]; then
+              BASE_BRANCH=stable_benchmark
+            fi
+          fi
+
+          echo "Comparing changes against '$BASE_BRANCH'"
+          git fetch origin $BASE_BRANCH
+
+          LAST_BASE_COMMIT=$(git rev-parse origin/$BASE_BRANCH)
+          CURRENT_COMMIT=$(git rev-parse HEAD)
+
+          if [ "$LAST_BASE_COMMIT" = "$CURRENT_COMMIT" ]; then
+            DIFF_RANGE="HEAD^1..HEAD"
+          else
+            DIFF_RANGE="origin/$BASE_BRANCH..HEAD"
+          fi
+
+          CHANGES=$(git diff --numstat "$DIFF_RANGE" \
+          | grep -v '\.ipynb$' \
+          | awk '$3 !~ /^tsfb\/base\/origin_code\// && $3 !~ /^examples\// {added+=$1; deleted+=$2} END {print added+deleted}')
+
+          if [ -n "$CHANGES" ] && [ "$CHANGES" -gt "$MAX_CHANGE_LINES" ]; then
+            echo "::error::Too many changes: $CHANGES lines. Maximum allowed: $MAX_CHANGE_LINES lines."
+            exit 1
+          else
+            echo "Number of changed lines (excluding origin_code): ${CHANGES:-0}"
+          fi
+
+      - name: Cache python installation
+        id: cache-python
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.pythonLocation }}
+          key: ${{ env.pythonLocation }}-${{ hashFiles('setup.py') }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: ${{ env.pythonLocation }}-${{ hashFiles('setup.py') }}
+
+      - name: Install dependencies
+        if: steps.cache-python.outputs.cache-hit != 'true'
+        run: |
+          python3 -m pip install --upgrade pip setuptools wheel
+          python3 -m pip install cmdstanpy==1.2.3
+          python3 -m cmdstanpy.install_cmdstan --version=2.32.2
+          python3 -m pip install -e ".[dev]"
+
+      - name: Make test
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH=.
+
+          IGNORE_DIR="tsfb/base/origin_code"
+
+          #############################################
+          # flake8
+          #############################################
+          echo "Running flake8 (excluding $IGNORE_DIR)..."
+          python3 -m flake8 tsfb --exclude="$IGNORE_DIR"
+
+          #############################################
+          # mypy
+          #############################################
+          echo "Running mypy (excluding $IGNORE_DIR)..."
+          python3 -m mypy --exclude "$IGNORE_DIR" tsfb
+
+          #############################################
+          # pytest
+          #############################################
+          echo "Running pytest (excluding $IGNORE_DIR)..."
+          pytest -s --durations=0 --disable-warnings tests/ --ignore="$IGNORE_DIR"
+
+          #############################################
+          # pylint
+          #############################################
+          echo "Building list of files for pylint..."
+
+          INCLUDED_FILES=$(find tsfb -type f -name "*.py" ! -path "$IGNORE_DIR/*")
+
+          echo "List of files to be checked by pylint:"
+          echo "$INCLUDED_FILES" | tr ' ' '\n'
+
+          echo "Running pylint on $(echo "$INCLUDED_FILES" | wc -w) files..."
+          python3 -m pylint $INCLUDED_FILES

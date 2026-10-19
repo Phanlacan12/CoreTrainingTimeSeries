@@ -1,0 +1,61 @@
+data_module_config: &data_module
+  pipeline_type: ts_default
+  kind: csv
+  backend: pandas
+  file_path: "tests/data/ETTh1.csv"
+  index_col: date
+  parse_dates: true
+  target_columns:
+    - OT
+  covariate:
+    past: []
+    future: []
+    static: []
+  split_mode: threshold
+  split_threshold:
+    train: ["2016-07-01", "2017-06-30"]
+    val: ["2017-07-01", "2017-10-31"]
+    test: ["2017-11-01", "2018-06-26"]
+  data_freq: "H"
+
+backend:
+  type: sequential
+  gpu_devices: [0]
+
+mlflow:
+  enabled: true
+  experiment_name: "UC7_MLflow_Example_AN_C_69b4c4_12"
+  # tracking_uri: "http://192.168.0.121:31748"
+  tags:
+    model_version: "v1.0"
+    team: "forecasting"
+
+model:
+  C_69b4c4_0:
+    approach: default
+    model_name: "darts.models.NLinearModel"
+    model_hyper_params:
+      input_chunk_length: 24
+      output_chunk_length: 24
+      n_epochs: 1
+      batch_size: 32
+      random_state: 42
+      pl_trainer_kwargs:
+        accelerator: cpu
+
+
+
+evaluation:
+  strategy_args:
+    horizon: 24
+    data_module_config: *data_module
+  metrics:
+    - mae
+    - mse
+    - rmse
+    - mape
+
+# reduce_size_config:
+#  method: "pytorch"
+#  target_ratio: 0.25
+#  output_dir: example_for_ibm_watson_deploy/uc7_mlflow

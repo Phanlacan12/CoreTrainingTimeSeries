@@ -1,0 +1,42 @@
+model:
+  single_model:
+    model_name: darts.models.ARIMA
+    model_hyper_params:
+      trend: c
+
+tuning:
+  n_trials: 5
+  log_top_k_trial: 3
+  metric: rmse
+  direction: minimize
+  parameters:
+    - name: p
+      type: int
+      min: 0
+      max: 2
+    - name: d
+      type: int
+      min: 0
+      max: 2
+    - name: q
+      type: int
+      min: 0
+      max: 2
+    - name: P_seasonal
+      type: int
+      min: 0
+      max: 2
+    - name: D_seasonal
+      type: int
+      min: 0
+      max: 2
+    - name: Q_seasonal
+      type: int
+      min: 0
+      max: 2
+    - name: seasonal_periods
+      type: categorical
+      choices: [7, 12, 14, 24]
+    - name: measurement_error
+      type: categorical
+      choices: [true, false]

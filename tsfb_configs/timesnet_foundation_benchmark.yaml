@@ -1,0 +1,88 @@
+# ============================================================
+# TimesNet-style Foundation Model Zero-shot Benchmark
+#
+# Dataset  : ETTh1  (Electricity Transformer Temperature, hourly)
+# Target   : OT (Oil Temperature) — univariate, chuẩn TimesNet paper
+# Horizons : 96 / 192 / 336 / 720  (chạy từng file riêng qua --horizon)
+# Context  : 512 steps  (foundation model default)
+# Models   : Chronos-2-Small (zero-shot), MOMENT-1-large (zero-shot)
+#
+# Tham chiếu: TimesNet (Wu et al., 2023) — Table 2/3
+# ============================================================
+
+data_module_config: &data_module
+  pipeline_type: ts_default
+  kind: csv
+  backend: pandas
+  file_path: "./tests/data/ETTh1.csv"
+  index_col: date
+  parse_dates: true
+
+  target_columns:
+    - OT           # Oil Temperature — univariate, chuẩn TimesNet
+
+  covariate:
+    past: []
+    future: []
+    static: []
+
+  normalize:
+    method: standard    # z-score — chuẩn TimesNet evaluation
+  split_ratio:
+    train: 0.6
+    val: 0.2
+    test: 0.2
+  data_freq: "H"
+
+backend:
+  type: sequential
+  gpu_devices: [0]
+
+model:
+
+  # ── Chronos-2 Small — Zero-shot ──────────────────────────────
+  chronos_small_zeroshot:
+    approach: default
+    model_name: "foundation.chronos"
+    model_hyper_params:
+      pretrained_model_id: "autogluon/chronos-2-small"
+      inference_mode: "zeroshot"
+      device: "cpu"
+      num_samples: 20
+      torch_dtype: "float32"
+      context_length: 512
+
+  # ── MOMENT-1-large — Zero-shot ───────────────────────────────
+  moment_large_zeroshot:
+    approach: default
+    model_name: "foundation.moment"
+    model_hyper_params:
+      pretrained_model_id: "AutonLab/MOMENT-1-large"
+      inference_mode: "zeroshot"
+      device: "cpu"
+      torch_dtype: "float32"
+      context_length: 512
+
+evaluation:
+  series_list: ["__default__"]
+  strategy_args:
+    strategy_name: rolling_forecast
+    seed: 42
+    deterministic: full
+    horizon: 96          # ← override via script per run: 96 / 192 / 336 / 720
+    num_rollings: 200    # đủ để ổn định metric, không quá chậm
+    stride: 1
+    data_module_config: *data_module
+    save_true_pred: true
+    target_channel:
+      "__default__": null
+    return_metrics_per_series: true
+
+  metrics:
+    - mae
+    - mse
+    - rmse
+    - mape
+
+mlflow:
+  enabled: false
