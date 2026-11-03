@@ -1,4 +1,4 @@
-name: IC time series forecasting
+name: PLA time series forecasting
 
 on:
   push:
